@@ -1,0 +1,384 @@
+{
+  "name": "Rohimaya - Book Publishing Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-book",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - Publish Button Clicked",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400],
+      "webhookId": "publish-book"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Validate manuscript format\nconst manuscript = $input.item.json.manuscript;\nconst errors = [];\n\nif (!manuscript.title) errors.push('Missing title');\nif (!manuscript.author) errors.push('Missing author');\nif (!manuscript.content || manuscript.content.length < 10000) {\n  errors.push('Content too short (min 10,000 chars)');\n}\nif (!manuscript.genre) errors.push('Missing genre');\n\nif (errors.length > 0) {\n  return { json: { valid: false, errors } };\n}\n\nreturn { json: { valid: true, manuscript } };"
+      },
+      "name": "Validate Manuscript Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.valid }}",
+              "operation": "equals",
+              "value2": "true"
+            }
+          ]
+        }
+      },
+      "name": "IF - Validation Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate ISBN (placeholder - would connect to ISBN agency API)\nconst isbn = 'ISBN-' + Math.random().toString(36).substring(2, 15);\nreturn { json: { ...$input.item.json, isbn } };"
+      },
+      "name": "Generate ISBN",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "book",
+        "additionalFields": {
+          "title": "={{ $json.manuscript.title }}",
+          "author": "={{ $json.manuscript.author }}",
+          "isbn": "={{ $json.isbn }}",
+          "format": "ebook",
+          "price": "={{ $json.manuscript.price || 9.99 }}"
+        }
+      },
+      "name": "KDP - Create Listing",
+      "type": "n8n-nodes-base.http",
+      "typeVersion": 1,
+      "position": [1050, 250],
+      "credentials": {
+        "kdpApi": {
+          "id": "5",
+          "name": "KDP API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "resource": "book",
+        "additionalFields": {
+          "title": "={{ $json.manuscript.title }}",
+          "author": "={{ $json.manuscript.author }}",
+          "isbn": "={{ $json.isbn }}",
+          "format": "paperback"
+        }
+      },
+      "name": "IngramSpark - Upload",
+      "type": "n8n-nodes-base.http",
+      "typeVersion": 1,
+      "position": [1050, 350],
+      "credentials": {
+        "ingramsparkApi": {
+          "id": "6",
+          "name": "IngramSpark API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate EPUB from manuscript\nconst manuscript = $input.item.json.manuscript;\nconst epub = {\n  title: manuscript.title,\n  author: manuscript.author,\n  content: manuscript.content,\n  format: 'epub',\n  generated_at: new Date().toISOString()\n};\nreturn { json: { ...$input.item.json, epub } };"
+      },
+      "name": "Generate EPUB",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1050, 450]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "distributor": "smashwords",
+        "bookData": {
+          "title": "={{ $json.manuscript.title }}",
+          "author": "={{ $json.manuscript.author }}",
+          "file": "={{ $json.epub }}"
+        }
+      },
+      "name": "Send to Smashwords",
+      "type": "n8n-nodes-base.http",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "distributor": "draft2digital",
+        "bookData": {
+          "title": "={{ $json.manuscript.title }}",
+          "author": "={{ $json.manuscript.author }}",
+          "file": "={{ $json.epub }}"
+        }
+      },
+      "name": "Send to Draft2Digital",
+      "type": "n8n-nodes-base.http",
+      "typeVersion": 1,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "operation": "generate",
+        "contentType": "marketing",
+        "bookInfo": {
+          "title": "={{ $json.manuscript.title }}",
+          "author": "={{ $json.manuscript.author }}",
+          "genre": "={{ $json.manuscript.genre }}"
+        }
+      },
+      "name": "Generate Marketing Assets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1050, 550]
+    },
+    {
+      "parameters": {
+        "operation": "schedule",
+        "emailType": "launch_sequence",
+        "recipientList": "subscriber_list",
+        "bookData": {
+          "title": "={{ $json.manuscript.title }}",
+          "author": "={{ $json.manuscript.author }}"
+        },
+        "scheduleDate": "={{ $json.launch_date }}"
+      },
+      "name": "Schedule Launch Emails",
+      "type": "n8n-nodes-base.schedule",
+      "typeVersion": 1,
+      "position": [1250, 600]
+    },
+    {
+      "parameters": {
+        "platforms": ["twitter", "instagram", "facebook"],
+        "content": "New book alert! 📚 {{ $json.manuscript.title }} by {{ $json.manuscript.author }} is now available!",
+        "scheduleTime": "={{ $json.launch_date }}"
+      },
+      "name": "Post to Social Media",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1250, 700]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "user_dashboard",
+        "updateFields": {
+          "last_published": "={{ $now }}",
+          "published_books": "={{ $json.published_count + 1 }}",
+          "status": "Book published successfully!"
+        }
+      },
+      "name": "Update User Dashboard",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#book-launches",
+        "text": "📚 New book published: *{{ $json.manuscript.title }}* by {{ $json.manuscript.author }}\\nISBN: {{ $json.isbn }}",
+        "attachments": []
+      },
+      "name": "Slack - Notify Team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1450, 500],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Book published successfully!\", \"isbn\": $json.isbn, \"platforms\": [\"KDP\", \"IngramSpark\", \"Smashwords\", \"Draft2Digital\"] } }}"
+      },
+      "name": "Respond - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "statusCode": 400,
+        "responseBody": "={{ { \"success\": false, \"errors\": $json.errors } }}"
+      },
+      "name": "Respond - Validation Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 500]
+    }
+  ],
+  "connections": {
+    "Webhook - Publish Button Clicked": {
+      "main": [
+        [
+          {
+            "node": "Validate Manuscript Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Manuscript Format": {
+      "main": [
+        [
+          {
+            "node": "IF - Validation Passed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Validation Passed": {
+      "main": [
+        [
+          {
+            "node": "Generate ISBN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Validation Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate ISBN": {
+      "main": [
+        [
+          {
+            "node": "KDP - Create Listing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IngramSpark - Upload",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate EPUB",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Marketing Assets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate EPUB": {
+      "main": [
+        [
+          {
+            "node": "Send to Smashwords",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send to Draft2Digital",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Marketing Assets": {
+      "main": [
+        [
+          {
+            "node": "Schedule Launch Emails",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Social Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KDP - Create Listing": {
+      "main": [
+        [
+          {
+            "node": "Update User Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IngramSpark - Upload": {
+      "main": [
+        [
+          {
+            "node": "Update User Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update User Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Slack - Notify Team",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "2",
+  "meta": {
+    "instanceId": "rohimaya-publishing"
+  },
+  "tags": []
+}

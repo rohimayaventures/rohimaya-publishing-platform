@@ -1,0 +1,406 @@
+{
+  "name": "Rohimaya - Payment Processing & Subscription Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stripe-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Stripe Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400],
+      "webhookId": "stripe-payments"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.type }}",
+              "operation": "equals",
+              "value2": "payment_intent.succeeded"
+            }
+          ]
+        }
+      },
+      "name": "IF - Payment Succeeded",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.type }}",
+              "operation": "equals",
+              "value2": "payment_intent.payment_failed"
+            }
+          ]
+        }
+      },
+      "name": "IF - Payment Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "user_subscriptions",
+        "filterType": "manual",
+        "matchFields": "user_id",
+        "updateFields": {
+          "subscription_status": "active",
+          "subscription_tier": "={{ $json.data.object.metadata.tier }}",
+          "subscription_start": "={{ $now }}",
+          "subscription_end": "={{ $now.plus(1, 'month').toISO() }}",
+          "payment_method": "stripe",
+          "last_payment": "={{ $now }}"
+        }
+      },
+      "name": "Supabase - Update Subscription",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "billing@rohimayapublishing.com",
+        "toEmail": "={{ $json.data.object.receipt_email }}",
+        "subject": "Payment Received - Thank You! 💳",
+        "emailType": "html",
+        "html": "<h1>Payment Confirmation</h1>\n<p>Thank you for your payment!</p>\n<p><strong>Amount:</strong> ${{ $json.data.object.amount / 100 }}</p>\n<p><strong>Subscription:</strong> {{ $json.data.object.metadata.tier }}</p>\n<p><strong>Receipt:</strong> <a href='{{ $json.data.object.receipt_url }}'>View Receipt</a></p>\n<p>Your subscription is now active.</p>\n<p>Rohimaya Publishing Team</p>"
+      },
+      "name": "SendGrid - Receipt Email",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [850, 150],
+      "credentials": {
+        "sendGridApi": {
+          "id": "2",
+          "name": "SendGrid"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Grant access to features based on subscription tier\nconst tier = $input.item.json.data.object.metadata.tier;\nconst userId = $input.item.json.data.object.metadata.user_id;\n\nconst featureAccess = {\n  free: {\n    ai_assistant: true,\n    manuscript_formatter: true,\n    max_projects: 3,\n    max_exports: 10\n  },\n  pro: {\n    ai_assistant: true,\n    manuscript_formatter: true,\n    ai_cover_designer: true,\n    audiobook_generator: true,\n    plot_outliner: true,\n    character_creator: true,\n    marketing_generator: true,\n    max_projects: 50,\n    max_exports: 'unlimited'\n  },\n  premium: {\n    ai_assistant: true,\n    manuscript_formatter: true,\n    ai_cover_designer: true,\n    audiobook_generator: true,\n    plot_outliner: true,\n    character_creator: true,\n    marketing_generator: true,\n    priority_support: true,\n    custom_branding: true,\n    api_access: true,\n    max_projects: 'unlimited',\n    max_exports: 'unlimited'\n  }\n};\n\nreturn { json: { userId, tier, features: featureAccess[tier] || featureAccess.free } };"
+      },
+      "name": "Grant Feature Access",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "usage_limits",
+        "filterType": "manual",
+        "matchFields": "user_id",
+        "updateFields": {
+          "tier": "={{ $json.tier }}",
+          "max_projects": "={{ $json.features.max_projects }}",
+          "max_exports": "={{ $json.features.max_exports }}",
+          "features": "={{ JSON.stringify($json.features) }}",
+          "updated_at": "={{ $now }}"
+        }
+      },
+      "name": "Update Usage Limits",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 250],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "sheetId": "revenue_tracking",
+        "range": "Sheet1!A:H",
+        "values": [
+          "={{ $now }}",
+          "={{ $json.data.object.metadata.user_id }}",
+          "={{ $json.data.object.receipt_email }}",
+          "={{ $json.data.object.metadata.tier }}",
+          "={{ $json.data.object.amount / 100 }}",
+          "={{ $json.data.object.currency }}",
+          "stripe",
+          "success"
+        ]
+      },
+      "name": "Log Revenue to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [1050, 350],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "11",
+          "name": "Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.data.object.amount }}",
+              "operation": "largerEqual",
+              "value2": 10000
+            }
+          ]
+        }
+      },
+      "name": "IF - High Value Customer",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 450]
+    },
+    {
+      "parameters": {
+        "channel": "#high-value-customers",
+        "text": "💎 High-value payment: ${{ $json.data.object.amount / 100 }} from {{ $json.data.object.receipt_email }}\\nTier: {{ $json.data.object.metadata.tier }}",
+        "attachments": []
+      },
+      "name": "Slack - Notify High Value",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1250, 450],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "resource": "analytics",
+        "data": {
+          "event": "payment_succeeded",
+          "user_id": "={{ $json.data.object.metadata.user_id }}",
+          "amount": "={{ $json.data.object.amount / 100 }}",
+          "tier": "={{ $json.data.object.metadata.tier }}",
+          "timestamp": "={{ $now }}"
+        }
+      },
+      "name": "Update Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1250, 350]
+    },
+    {
+      "parameters": {
+        "fromEmail": "billing@rohimayapublishing.com",
+        "toEmail": "={{ $json.data.object.receipt_email }}",
+        "subject": "Payment Failed - Action Required",
+        "emailType": "html",
+        "html": "<h1>Payment Failed</h1>\n<p>We were unable to process your payment.</p>\n<p><strong>Reason:</strong> {{ $json.data.object.last_payment_error.message }}</p>\n<p>Please update your payment method to continue your subscription.</p>\n<p><a href='https://rohimayapublishing.com/billing'>Update Payment Method</a></p>\n<p>If you have questions, please contact support.</p>"
+      },
+      "name": "SendGrid - Failed Payment Email",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [650, 500],
+      "credentials": {
+        "sendGridApi": {
+          "id": "2",
+          "name": "SendGrid"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "user_subscriptions",
+        "filterType": "manual",
+        "matchFields": "user_id",
+        "updateFields": {
+          "subscription_status": "payment_failed",
+          "last_payment_attempt": "={{ $now }}",
+          "payment_error": "={{ $json.data.object.last_payment_error.message }}"
+        }
+      },
+      "name": "Supabase - Mark Failed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 600],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"received\": true } }}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    }
+  ],
+  "connections": {
+    "Stripe Webhook": {
+      "main": [
+        [
+          {
+            "node": "IF - Payment Succeeded",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF - Payment Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Payment Succeeded": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Update Subscription",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Payment Failed": {
+      "main": [
+        [
+          {
+            "node": "SendGrid - Failed Payment Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Supabase - Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Update Subscription": {
+      "main": [
+        [
+          {
+            "node": "SendGrid - Receipt Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Grant Feature Access",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Grant Feature Access": {
+      "main": [
+        [
+          {
+            "node": "Update Usage Limits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Revenue to Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF - High Value Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - High Value Customer": {
+      "main": [
+        [
+          {
+            "node": "Slack - Notify High Value",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Revenue to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Update Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Analytics": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SendGrid - Failed Payment Email": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Mark Failed": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "4",
+  "meta": {
+    "instanceId": "rohimaya-publishing"
+  },
+  "tags": []
+}

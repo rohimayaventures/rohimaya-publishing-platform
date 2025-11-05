@@ -1,0 +1,325 @@
+{
+  "name": "Rohimaya - Content Publishing & Social Distribution",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerOn": "specificEvent",
+        "event": "post_published",
+        "options": {}
+      },
+      "name": "Trigger - New Blog Post",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 1"
+            }
+          ]
+        }
+      },
+      "name": "Schedule - Weekly Newsletter",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 600]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "resource": "post",
+        "postId": "={{ $json.post_id }}"
+      },
+      "name": "Get Blog Post from CMS",
+      "type": "n8n-nodes-base.http",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate social media posts from blog content\nconst post = $input.item.json;\nconst title = post.title;\nconst excerpt = post.excerpt || post.content.substring(0, 200);\nconst url = post.url;\n\nconst socialPosts = {\n  twitter: `${title}\\n\\n${excerpt.substring(0, 200)}...\\n\\n${url}\\n\\n#Writing #Publishing #Authors`,\n  instagram: `${title}\\n\\n${excerpt}\\n\\nLink in bio!\\n\\n#writing #publishing #authors #booklovers #writingcommunity`,\n  linkedin: `${title}\\n\\n${post.content.substring(0, 500)}...\\n\\nRead more: ${url}\\n\\n#Publishing #Writing #Content`,\n  facebook: `${title}\\n\\n${excerpt}\\n\\nRead the full post: ${url}`\n};\n\nreturn { json: { ...post, socialPosts } };"
+      },
+      "name": "Generate Social Posts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.socialPosts.twitter }}",
+        "additionalFields": {}
+      },
+      "name": "Post to Twitter",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 1,
+      "position": [850, 250],
+      "credentials": {
+        "twitterOAuth2Api": {
+          "id": "7",
+          "name": "Twitter OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "caption": "={{ $json.socialPosts.instagram }}",
+        "additionalFields": {}
+      },
+      "name": "Post to Instagram",
+      "type": "n8n-nodes-base.http",
+      "typeVersion": 1,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "content": "={{ $json.socialPosts.linkedin }}",
+        "additionalFields": {}
+      },
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [850, 450],
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "id": "8",
+          "name": "LinkedIn OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "message": "={{ $json.socialPosts.facebook }}",
+        "additionalFields": {}
+      },
+      "name": "Post to Facebook",
+      "type": "n8n-nodes-base.facebook",
+      "typeVersion": 1,
+      "position": [850, 550]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Create email newsletter from blog post\nconst post = $input.item.json;\nconst newsletter = {\n  subject: `📚 New from Rohimaya: ${post.title}`,\n  preheader: post.excerpt,\n  body: `\n    <h1>${post.title}</h1>\n    <p>${post.excerpt}</p>\n    <p>${post.content}</p>\n    <p><a href=\"${post.url}\">Read on our blog</a></p>\n    <hr>\n    <p><small>Rohimaya Publishing | Ascend • Flourish • Enlighten</small></p>\n  `\n};\nreturn { json: { ...post, newsletter } };"
+      },
+      "name": "Create Email Newsletter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [650, 600]
+    },
+    {
+      "parameters": {
+        "operation": "sendCampaign",
+        "campaignId": "={{  $json.newsletter_campaign_id }}",
+        "listId": "subscribers",
+        "subject": "={{ $json.newsletter.subject }}",
+        "htmlContent": "={{ $json.newsletter.body }}"
+      },
+      "name": "Send via Mailchimp",
+      "type": "n8n-nodes-base.mailchimp",
+      "typeVersion": 1,
+      "position": [850, 650],
+      "credentials": {
+        "mailchimpApi": {
+          "id": "3",
+          "name": "Mailchimp"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "post",
+        "title": "={{ $json.title }}",
+        "content": "={{ $json.content }}",
+        "tags": "={{ $json.tags }}",
+        "canonicalUrl": "={{ $json.url }}"
+      },
+      "name": "Publish to Medium",
+      "type": "n8n-nodes-base.medium",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "mediumOAuth2Api": {
+          "id": "9",
+          "name": "Medium OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "resource": "article",
+        "title": "={{ $json.title }}",
+        "bodyMarkdown": "={{ $json.content }}",
+        "tags": "={{ $json.tags.split(',') }}",
+        "canonicalUrl": "={{ $json.url }}"
+      },
+      "name": "Publish to Dev.to",
+      "type": "n8n-nodes-base.devTo",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "credentials": {
+        "devToApi": {
+          "id": "10",
+          "name": "Dev.to API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "service": "buffer",
+        "posts": [
+          {
+            "text": "={{ $json.socialPosts.twitter }}",
+            "scheduledAt": "={{ $now.plus(1, 'hours').toISO() }}"
+          },
+          {
+            "text": "={{ $json.socialPosts.facebook }}",
+            "scheduledAt": "={{ $now.plus(2, 'hours').toISO() }}"
+          }
+        ]
+      },
+      "name": "Schedule Posts via Buffer",
+      "type": "n8n-nodes-base.http",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "resource": "analytics",
+        "data": {
+          "event": "content_published",
+          "post_id": "={{ $json.post_id }}",
+          "title": "={{ $json.title }}",
+          "published_at": "={{ $now }}",
+          "channels": "blog,twitter,instagram,linkedin,facebook,medium,devto"
+        }
+      },
+      "name": "Update Analytics Dashboard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    }
+  ],
+  "connections": {
+    "Trigger - New Blog Post": {
+      "main": [
+        [
+          {
+            "node": "Get Blog Post from CMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule - Weekly Newsletter": {
+      "main": [
+        [
+          {
+            "node": "Create Email Newsletter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Blog Post from CMS": {
+      "main": [
+        [
+          {
+            "node": "Generate Social Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Social Posts": {
+      "main": [
+        [
+          {
+            "node": "Post to Twitter",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Instagram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to LinkedIn",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Facebook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Publish to Medium",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Publish to Dev.to",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Schedule Posts via Buffer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Email Newsletter": {
+      "main": [
+        [
+          {
+            "node": "Send via Mailchimp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Twitter": {
+      "main": [
+        [
+          {
+            "node": "Update Analytics Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publish to Medium": {
+      "main": [
+        [
+          {
+            "node": "Update Analytics Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "3",
+  "meta": {
+    "instanceId": "rohimaya-publishing"
+  },
+  "tags": []
+}

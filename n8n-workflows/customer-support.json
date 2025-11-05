@@ -1,0 +1,393 @@
+{
+  "name": "Rohimaya - Customer Support Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-ticket",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - New Support Ticket",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400],
+      "webhookId": "support-ticket"
+    },
+    {
+      "parameters": {
+        "emailAddress": "support@rohimayapublishing.com",
+        "folder": "INBOX",
+        "options": {
+          "simple": false
+        }
+      },
+      "name": "Email Trigger - Support Email",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 1,
+      "position": [250, 600]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "support_tickets",
+        "columns": "user_email, subject, message, status, priority, created_at",
+        "returnFields": "*"
+      },
+      "name": "Supabase - Create Ticket",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// AI-powered ticket categorization\nconst message = $input.item.json.message.toLowerCase();\nconst subject = $input.item.json.subject.toLowerCase();\n\nlet category = 'general';\nlet priority = 'normal';\n\n// Categorize based on keywords\nif (message.includes('bug') || message.includes('error') || message.includes('broken')) {\n  category = 'technical';\n  priority = 'high';\n} else if (message.includes('payment') || message.includes('billing') || message.includes('subscription')) {\n  category = 'billing';\n  priority = 'high';\n} else if (message.includes('how to') || message.includes('tutorial') || message.includes('help with')) {\n  category = 'how_to';\n  priority = 'normal';\n} else if (message.includes('feature request') || message.includes('suggestion')) {\n  category = 'feature_request';\n  priority = 'low';\n} else if (message.includes('refund') || message.includes('cancel')) {\n  category = 'billing';\n  priority = 'urgent';\n}\n\nreturn { json: { ...$input.item.json, category, priority } };"
+      },
+      "name": "AI - Categorize Issue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check knowledge base for known issues\nconst category = $input.item.json.category;\nconst message = $input.item.json.message.toLowerCase();\n\nconst knowledgeBase = {\n  'password reset': {\n    solution: 'Visit https://rohimayapublishing.com/reset-password and follow the instructions.',\n    autoRespond: true\n  },\n  'api key': {\n    solution: 'Your API keys can be found in Settings > API Keys. Make sure to keep them secure.',\n    autoRespond: true\n  },\n  'export issue': {\n    solution: 'Try clearing your browser cache and try again. If the issue persists, please let us know.',\n    autoRespond: true\n  },\n  'subscription cancel': {\n    solution: 'You can cancel your subscription anytime in Settings > Billing. Your access will continue until the end of your billing period.',\n    autoRespond: true\n  },\n  'file upload': {\n    solution: 'Make sure your file is under 10MB and in a supported format (.txt, .docx, .md). Try refreshing the page.',\n    autoRespond: true\n  }\n};\n\nlet solution = null;\nlet autoRespond = false;\n\nfor (const [keyword, data] of Object.entries(knowledgeBase)) {\n  if (message.includes(keyword)) {\n    solution = data.solution;\n    autoRespond = data.autoRespond;\n    break;\n  }\n}\n\nreturn { json: { ...$input.item.json, solution, autoRespond } };"
+      },
+      "name": "Check Knowledge Base",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.autoRespond }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF - Auto-Respond Available",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "support@rohimayapublishing.com",
+        "toEmail": "={{ $json.user_email }}",
+        "subject": "Re: {{ $json.subject }}",
+        "emailType": "html",
+        "html": "<h2>We're here to help!</h2>\n<p>Hi,</p>\n<p>Thank you for contacting Rohimaya Publishing support.</p>\n<p><strong>Your issue:</strong> {{ $json.subject }}</p>\n<p><strong>Solution:</strong></p>\n<p>{{ $json.solution }}</p>\n<p>If this doesn't solve your issue, our support team will follow up with you shortly.</p>\n<p>Best regards,<br>Rohimaya Support Team</p>\n<p><small>Ticket ID: {{ $json.id }}</small></p>"
+      },
+      "name": "SendGrid - Auto-Response",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "sendGridApi": {
+          "id": "2",
+          "name": "SendGrid"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.priority }}",
+              "operation": "equals",
+              "value2": "urgent"
+            }
+          ]
+        }
+      },
+      "name": "IF - Urgent Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1050, 550]
+    },
+    {
+      "parameters": {
+        "channel": "#urgent-support",
+        "text": "🚨 URGENT TICKET\\n*Subject:* {{ $json.subject }}\\n*Category:* {{ $json.category }}\\n*From:* {{ $json.user_email }}\\n*Message:* {{ $json.message }}\\n*Ticket ID:* {{ $json.id }}",
+        "attachments": []
+      },
+      "name": "Slack - Urgent Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1250, 550],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "#support",
+        "text": "📧 New Support Ticket\\n*Subject:* {{ $json.subject }}\\n*Category:* {{ $json.category }}\\n*Priority:* {{ $json.priority }}\\n*From:* {{ $json.user_email }}\\n*Ticket ID:* {{ $json.id }}\\n{{ $json.autoRespond ? '✅ Auto-response sent' : '⏳ Awaiting response' }}",
+        "attachments": []
+      },
+      "name": "Slack - Notify Team",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [1250, 450],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "support_metrics",
+        "columns": "ticket_id, response_time, category, priority, auto_resolved, timestamp"
+      },
+      "name": "Track Response Time",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 650],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "delayType": "hours",
+        "delay": 24,
+        "action": "checkTicketStatus"
+      },
+      "name": "Schedule - 24hr Follow-up",
+      "type": "n8n-nodes-base.schedule",
+      "typeVersion": 1,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check if ticket was resolved\nconst ticketId = $input.item.json.id;\n\n// Query ticket status (placeholder)\nconst ticketStatus = 'open'; // Would query from database\n\nif (ticketStatus === 'open') {\n  return { json: { ticketId, needsFollowUp: true } };\n} else {\n  return { json: { ticketId, needsFollowUp: false } };\n}"
+      },
+      "name": "Check Ticket Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.needsFollowUp }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "IF - Needs Follow-up",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1850, 400]
+    },
+    {
+      "parameters": {
+        "fromEmail": "support@rohimayapublishing.com",
+        "toEmail": "={{ $json.user_email }}",
+        "subject": "Following up on your support request",
+        "emailType": "html",
+        "html": "<p>Hi,</p>\n<p>We wanted to follow up on your support ticket regarding: {{ $json.subject }}</p>\n<p>Has your issue been resolved? If you still need help, please reply to this email or visit your support dashboard.</p>\n<p>Your satisfaction is important to us!</p>\n<p>Best regards,<br>Rohimaya Support Team</p>"
+      },
+      "name": "SendGrid - Follow-up Email",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [2050, 400],
+      "credentials": {
+        "sendGridApi": {
+          "id": "2",
+          "name": "SendGrid"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"ticketId\": $json.id, \"message\": \"Support ticket created successfully\" } }}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 500]
+    }
+  ],
+  "connections": {
+    "Webhook - New Support Ticket": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Create Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Trigger - Support Email": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Create Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Create Ticket": {
+      "main": [
+        [
+          {
+            "node": "AI - Categorize Issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI - Categorize Issue": {
+      "main": [
+        [
+          {
+            "node": "Check Knowledge Base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Knowledge Base": {
+      "main": [
+        [
+          {
+            "node": "IF - Auto-Respond Available",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF - Urgent Priority",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack - Notify Team",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Track Response Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Auto-Respond Available": {
+      "main": [
+        [
+          {
+            "node": "SendGrid - Auto-Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Urgent Priority": {
+      "main": [
+        [
+          {
+            "node": "Slack - Urgent Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SendGrid - Auto-Response": {
+      "main": [
+        [
+          {
+            "node": "Schedule - 24hr Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack - Notify Team": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule - 24hr Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Check Ticket Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Ticket Status": {
+      "main": [
+        [
+          {
+            "node": "IF - Needs Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Needs Follow-up": {
+      "main": [
+        [
+          {
+            "node": "SendGrid - Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "5",
+  "meta": {
+    "instanceId": "rohimaya-publishing"
+  },
+  "tags": []
+}

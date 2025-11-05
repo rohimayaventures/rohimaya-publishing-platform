@@ -1,0 +1,267 @@
+{
+  "name": "Rohimaya - User Onboarding Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "user-signup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - New User Signup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "new-user-signup"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "users",
+        "columns": "email, name, created_at, subscription_tier",
+        "returnFields": "*"
+      },
+      "name": "Supabase - Create User Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "welcome@rohimayapublishing.com",
+        "toEmail": "={{ $json.email }}",
+        "subject": "Welcome to Rohimaya Publishing! 🦚",
+        "emailType": "html",
+        "html": "<h1>Welcome to Rohimaya Publishing!</h1>\n<p>Hi {{ $json.name }},</p>\n<p>We're thrilled to have you join our community of authors and storytellers.</p>\n<h2>Get Started</h2>\n<ul>\n<li>Explore our 7 AI-powered writing tools</li>\n<li>Join our author community</li>\n<li>Check out our resource library</li>\n</ul>\n<p><a href='https://rohimayapublishing.com/dashboard'>Go to Dashboard</a></p>\n<p>Happy writing!</p>\n<p>The Rohimaya Team</p>",
+        "options": {}
+      },
+      "name": "SendGrid - Welcome Email",
+      "type": "n8n-nodes-base.sendGrid",
+      "typeVersion": 1,
+      "position": [650, 200],
+      "credentials": {
+        "sendGridApi": {
+          "id": "2",
+          "name": "SendGrid"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "projectName": "={{ $json.name }}'s First Project",
+        "description": "Your default project workspace"
+      },
+      "name": "Create Default Project",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "addOrUpdate",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "firstName": "={{ $json.name.split(' ')[0] }}",
+          "tags": "new_user,free_tier"
+        }
+      },
+      "name": "Mailchimp - Add to List",
+      "type": "n8n-nodes-base.mailchimp",
+      "typeVersion": 1,
+      "position": [650, 400],
+      "credentials": {
+        "mailchimpApi": {
+          "id": "3",
+          "name": "Mailchimp"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "delayType": "days",
+        "delay": 1,
+        "action": "sendEmail",
+        "emailData": {
+          "subject": "Day 1: Your Writing Journey Begins",
+          "body": "Tips for getting started with Rohimaya tools..."
+        }
+      },
+      "name": "Schedule - Day 1 Email",
+      "type": "n8n-nodes-base.schedule",
+      "typeVersion": 1,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "delayType": "days",
+        "delay": 3,
+        "action": "sendEmail",
+        "emailData": {
+          "subject": "Day 3: Explore AI Writing Assistant",
+          "body": "Learn how to use our AI tools effectively..."
+        }
+      },
+      "name": "Schedule - Day 3 Email",
+      "type": "n8n-nodes-base.schedule",
+      "typeVersion": 1,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "delayType": "days",
+        "delay": 7,
+        "action": "sendEmail",
+        "emailData": {
+          "subject": "Day 7: Ready to Publish?",
+          "body": "Your week 1 progress and next steps..."
+        }
+      },
+      "name": "Schedule - Day 7 Email",
+      "type": "n8n-nodes-base.schedule",
+      "typeVersion": 1,
+      "position": [850, 450]
+    },
+    {
+      "parameters": {
+        "channel": "#new-signups",
+        "text": "🎉 New user: {{ $json.name }} ({{ $json.email }})",
+        "attachments": []
+      },
+      "name": "Slack - Notify Admin",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [650, 500],
+      "credentials": {
+        "slackApi": {
+          "id": "4",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "event": "user_signup",
+        "properties": {
+          "email": "={{ $json.email }}",
+          "name": "={{ $json.name }}",
+          "tier": "free",
+          "source": "web"
+        }
+      },
+      "name": "Analytics - Track Signup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [650, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Welcome to Rohimaya!\", \"userId\": $json.id } }}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - New User Signup": {
+      "main": [
+        [
+          {
+            "node": "Supabase - Create User Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase - Create User Record": {
+      "main": [
+        [
+          {
+            "node": "SendGrid - Welcome Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Default Project",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mailchimp - Add to List",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack - Notify Admin",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Analytics - Track Signup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SendGrid - Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Schedule - Day 1 Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule - Day 1 Email": {
+      "main": [
+        [
+          {
+            "node": "Schedule - Day 3 Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule - Day 3 Email": {
+      "main": [
+        [
+          {
+            "node": "Schedule - Day 7 Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "1",
+  "meta": {
+    "instanceId": "rohimaya-publishing"
+  },
+  "tags": []
+}
